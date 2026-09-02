@@ -1,0 +1,42 @@
+[
+{
+  "company": "Microsoft",
+  "ticker": "MSFT"
+},
+{
+  "company": "Apple",
+  "ticker": "AAPL"
+},
+{
+  "company": "Google",
+  "ticker": "GOOGL"
+},
+{
+  "company": "Tesla",
+  "ticker": "TSLA"
+},
+{
+  "company": "AMAZON",
+  "ticker": "AMZN"
+},
+{
+  "company": "Nvidia",
+  "ticker": "NVDA"
+},
+{
+  "company": "Broadcom",
+  "ticker": "AVGO"
+},
+{
+  "company": "Costco Wholesale",
+  "ticker": "COST"
+},
+{
+  "company": "Meta Platforms",
+  "ticker": "META"
+},
+{
+  "company": "Netflix ",
+  "ticker": "NFLX"
+}
+]

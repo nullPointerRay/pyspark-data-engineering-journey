@@ -4,7 +4,7 @@
 
 **Approach:** Databricks-native, SparkSQL-first, project-based — no syntax drills, no hello-world exercises. Every phase produces a real, portfolio-grade artifact on GitHub (`nullPointerRay`).
 
-**Progress:** 2 of ~60 working sessions complete · Phase 1, Project 1 — 40% through
+**Progress:** 3 of ~60 working sessions complete · Phase 1, Project 1 — 40% through
 
 ---
 
@@ -66,5 +66,5 @@ Repo: [`pyspark-data-engineering-journey`](https://github.com/nullPointerRay/pys
 - Verified every stage the same way, every time: row count parity (25,119, matching Bronze/Silver), DESCRIBE HISTORY confirming the corrected rebuild physically replaced the flawed file (numRemovedFiles: 1), and a per-ticker NULL-count breakdown proving the completeness logic behaves identically across all ten tickers — including COST, whose known data gap doesn't leak into row-based window completeness the way a naive assumption might expect.
 ---
 
-*Last updated: Day 2 (Bronze + Silver complete, Gold layer next session)*
+*Last updated: Day 3 (Gold layer daily metrics; Gold weekly and monthly next session)*
 

@@ -18,7 +18,7 @@ Repo: [`pyspark-data-engineering-journey`](https://github.com/nullPointerRay/pys
 - [x] **Bronze data quality finding** — identified and documented a real vendor gap: COST missing one trading day (2026-08-28), confirmed as a yfinance-side issue via set-difference analysis, deliberately left unfixed to motivate Week 3
 - [x] **Silver layer — Day 2** — type casting (`TIMESTAMP`→`DATE`), NULL-safe `daily_return` via `LAG()` (NULL means "no prior data," not a fabricated zero), `rolling_avg_7d` with explicit 7-row completeness gating (no fake partial averages), verified via row-count parity and predicted-vs-actual NULL distribution checks
 - [x] **Notebook hygiene** — separated production cells from exploratory/debug cells into a dedicated `00_dev_playground` scratch notebook, so scheduled Job runs don't re-execute diagnostic queries
-- [ ] **Gold layer** — business-level aggregations and features, first real "what does this need to answer" design decisions
+- [x] **Gold layer** — business-level aggregations and features, first real "what does this need to answer" design decisions
 - [ ] **Week 3 — Data Quality Engine** — reusable validation framework (Pandera / Great Expectations + DLT expectations), the COST gap becomes the motivating real-world example
 - [ ] **Week 4 — Performance & Governance** — partitioning, Z-ordering, broadcast joins, query plan reading, Unity Catalog access control at scale (likely using the larger Kaggle historical dataset to force real optimization decisions)
 
@@ -58,7 +58,12 @@ Repo: [`pyspark-data-engineering-journey`](https://github.com/nullPointerRay/pys
 - Proved MERGE idempotency with two independent methods (merge stats + row count) before trusting the pipeline
 - Caught and fixed a silent semantic bug: a `0` default that visually looked correct but conflated "no change" with "no data" — same for a rolling average that was silently averaging incomplete windows
 - Diagnosed a `NO_SUCH_CATALOG_EXCEPTION` from first principles (`SHOW CATALOGS`) instead of guessing
+- Designed and built gold_daily_metrics, the first Gold-layer table in the pipeline — four new business metrics (rolling_avg_volume_20d, relative_volume_20d, return_volatility_20d, swing_volatility_20d) layered on top of Silver, each with independently correct completeness gating rather than a blanket rule copy-pasted across all four.
+- Caught a real logical coupling bug: swing_volatility_20d — a metric built entirely from high/low/close — was initially gated on vol_count_20d, a completeness check on an unrelated column (volume). The bug was invisible against current data (all four source columns happen to be NULL-free), which is exactly what made it dangerous — it would only have surfaced the day a real vendor gap hit one column but not another, silently and incorrectly nulling out a perfectly computable metric. Fixed by staging a dedicated row_count_20d gate tied to the actual dependency, and verified the fix by tracing it through two more revisions before it actually landed correctly everywhere it needed to.
 
+- Also independently reasoned that STDDEV(daily_return) alone doesn't capture true intraday volatility — a stock can have a flat close-to-close return while still swinging wildly within the day — and proposed a second, complementary metric (swing_volatility_20d, based on high/low range) to cover that blind spot. That's not a beginner instinct; that's the same reasoning behind why real quant volatility estimators (Parkinson's, Garman-Klass) exist.
+
+- Verified every stage the same way, every time: row count parity (25,119, matching Bronze/Silver), DESCRIBE HISTORY confirming the corrected rebuild physically replaced the flawed file (numRemovedFiles: 1), and a per-ticker NULL-count breakdown proving the completeness logic behaves identically across all ten tickers — including COST, whose known data gap doesn't leak into row-based window completeness the way a naive assumption might expect.
 ---
 
 *Last updated: Day 2 (Bronze + Silver complete, Gold layer next session)*

@@ -53,21 +53,33 @@ Repo: [`pyspark-data-engineering-journey`](https://github.com/nullPointerRay/pys
 
 ---
 
-## Wins Log (real debugging stories — pull these for interviews)
-- Caught a genuine vendor data gap (COST, missing trading day) through independent set-difference verification, not by assumption
-- Proved MERGE idempotency with two independent methods (merge stats + row count) before trusting the pipeline
-- Caught and fixed a silent semantic bug: a `0` default that visually looked correct but conflated "no change" with "no data" — same for a rolling average that was silently averaging incomplete windows
-- Diagnosed a `NO_SUCH_CATALOG_EXCEPTION` from first principles (`SHOW CATALOGS`) instead of guessing
-- Designed and built gold_daily_metrics, the first Gold-layer table in the pipeline — four new business metrics (rolling_avg_volume_20d, relative_volume_20d, return_volatility_20d, swing_volatility_20d) layered on top of Silver, each with independently correct completeness gating rather than a blanket rule copy-pasted across all four.
-- Caught a real logical coupling bug: swing_volatility_20d — a metric built entirely from high/low/close — was initially gated on vol_count_20d, a completeness check on an unrelated column (volume). The bug was invisible against current data (all four source columns happen to be NULL-free), which is exactly what made it dangerous — it would only have surfaced the day a real vendor gap hit one column but not another, silently and incorrectly nulling out a perfectly computable metric. Fixed by staging a dedicated row_count_20d gate tied to the actual dependency, and verified the fix by tracing it through two more revisions before it actually landed correctly everywhere it needed to.
+## Design Decisions & Technical Judgment
 
-- Also independently reasoned that STDDEV(daily_return) alone doesn't capture true intraday volatility — a stock can have a flat close-to-close return while still swinging wildly within the day — and proposed a second, complementary metric (swing_volatility_20d, based on high/low range) to cover that blind spot. That's not a beginner instinct; that's the same reasoning behind why real quant volatility estimators (Parkinson's, Garman-Klass) exist.
+[#design-decisions--technical-judgment](#design-decisions--technical-judgment)
 
-- Verified every stage the same way, every time: row count parity (25,119, matching Bronze/Silver), DESCRIBE HISTORY confirming the corrected rebuild physically replaced the flawed file (numRemovedFiles: 1), and a per-ticker NULL-count breakdown proving the completeness logic behaves identically across all ten tickers — including COST, whose known data gap doesn't leak into row-based window completeness the way a naive assumption might expect.
+**Bronze — Data Sourcing & Quality**
+- Identified a genuine upstream vendor data gap (COST missing one trading day) through independent set-difference verification rather than trusting row counts at face value — treated as a documented, deliberate finding rather than silently patched, since fabricating a missing row would have been a worse outcome than an honest gap.
+- Designed the ingestion layer around idempotent `MERGE` semantics from day one, anticipating incremental ticker additions, and proved idempotency empirically — two independent methods (merge operation statistics and a full row-count rerun) — before trusting the pipeline as rerun-safe.
 
-- Designed and built gold_weekly_summary, the first table in the pipeline requiring a genuine grain change — recognized independently that weekly aggregation couldn't reuse the row-preserving window-function pattern from Bronze/Silver/gold_daily_metrics, and required GROUP BY instead, with correct instincts on which source columns needed FIRST_VALUE/LAST_VALUE treatment (open/close) versus plain aggregation (MIN/MAX/SUM for low/high/volume).
+**Silver — Data Semantics**
+- Established a firm distinction between "no data exists" and "no change occurred" in derived metrics — a `NULL` default was chosen over a fabricated `0` for `daily_return`'s boundary case, since collapsing those two meanings into one value would silently mislead any downstream consumer, human or model.
+- Applied the same completeness-first principle to rolling averages: a window with fewer observations than its stated size is explicitly nulled rather than allowed to silently report a partial average under a label implying completeness.
 
-- Caught a subtle logical error in my own initial design before it shipped: I proposed MIN(open)/MAX(close) for weekly open/close, which would have silently fabricated candles from mismatched days rather than reflecting the actual first and last trading day of the week — caught the flaw and correctly proposed FIRST_VALUE/LAST_VALUE instead.
+**Gold Daily — Metric Design**
+- Designed four independent business metrics (rolling volume, relative volume, return volatility, swing volatility), each with its own correctness-appropriate completeness gate rather than one generic rule copy-pasted across all four.
+- Identified and corrected a dependency design flaw prior to materialization: a price-derived metric (`swing_volatility_20d`) was initially coupled to an unrelated column's completeness state (`volume`). The coupling was invisible against current data — a defect class that only surfaces under future data conditions — which is exactly the kind of hidden dependency a design review needs to catch, not a runtime failure.
+- Made a deliberate distinction between two related but non-equivalent volatility concepts: close-to-close return volatility versus intraday high/low range, recognizing that a stock can appear "calm" on daily returns while still exhibiting significant intraday swings — the same reasoning underlying real quantitative volatility estimators (Parkinson's, Garman-Klass).
+- Selected sample-based standard deviation over population-based, correctly reasoning that a rolling window is an estimate drawn from an ongoing, incomplete process rather than a closed, fully-observed population.
+
+**Gold Weekly — Grain & Aggregation Design**
+
+- Recognized independently that weekly aggregation required a fundamentally different query pattern (`GROUP BY`) than the row-preserving window functions used throughout Bronze/Silver/Gold Daily — a genuine grain change, not an incremental extension of prior work.
+- Corrected an initial design flaw before implementation: naively deriving weekly open/close via `MIN`/`MAX` would have fabricated candles from mismatched trading days rather than reflecting the actual first and last session of the week — resolved using ordered first/last-value logic instead.
+- Independently verified a flagged discrepancy against raw source numbers rather than accepting a correction at face value, and was proven right — the correction itself had miscounted a column position.
+- Identified and corrected a non-obvious SQL semantics trap in default window framing that would have silently and identically mis-priced every weekly close — a class of bug invisible without deliberate frame-boundary testing.
+- Clarified an ambiguous metric definition ("trending") into two precise, independently meaningful measures — return-based ranking and volume-based ranking — rather than allowing one overloaded label to obscure which concept was actually being surfaced.
+- Caught a self-introduced labeling error before shipping: an initially proposed "52-week trailing volatility" was actually a full annual measure, not a monthly-comparable one — corrected both the window size and the column name to honestly reflect what was being measured.
+- Introduced a conservation check (sum of trading days across all weekly periods equals the total daily row count) as a stronger correctness proof than row count alone — verifying no daily record was lost or double-counted across grain boundaries.
 ---
 
 *Last updated: Day 4 (Gold layer Weekly metrics; Gold monthly next session)*
